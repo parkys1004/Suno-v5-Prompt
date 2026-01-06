@@ -1,3 +1,4 @@
+"use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { GENRE_DATA } from './constants';
@@ -16,7 +17,6 @@ const App: React.FC = () => {
   const [userConcept, setUserConcept] = useState('');
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
-  // SSR 하이드레이션 불일치 방지: 브라우저 마운트 후 렌더링 시작
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -34,24 +34,22 @@ const App: React.FC = () => {
   }, [selectedGenreId]);
 
   const handleCopy = async (text: string) => {
-    // window/navigator 존재 여부 체크 (SSR 환경 대비)
-    if (typeof window === 'undefined' || !navigator.clipboard) return;
+    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.clipboard) return;
     try {
       await navigator.clipboard.writeText(text);
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 2000);
     } catch (err) {
-      // 에러 로그는 최소화하여 사용자 노출 방지
+      // Fail silently for user experience
     }
   };
 
   const generateAIPrompt = async () => {
-    // Vercel 환경 변수 참조
     const apiKey = process.env.API_KEY;
     if (!userConcept.trim()) return;
     
     if (!apiKey) {
-      setErrorStatus("서비스 설정을 확인해주세요.");
+      setErrorStatus("API 설정을 확인해주세요.");
       setTimeout(() => setErrorStatus(null), 3000);
       return;
     }
@@ -92,7 +90,6 @@ const App: React.FC = () => {
   const accentColor = selectedGenre.category === 'K-POP' ? '#db2777' : '#3b82f6';
   const accentBg = selectedGenre.category === 'K-POP' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600';
 
-  // SSR 안정성을 위한 초기 상태 처리
   if (!mounted) return null;
 
   return (
