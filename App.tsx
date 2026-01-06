@@ -14,8 +14,9 @@ const App: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState<{text: string, desc: string} | null>(null);
   const [userConcept, setUserConcept] = useState('');
+  const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
-  // SSR 환경에서 클라이언트 전용 기능을 안전하게 실행하기 위한 mounted check
+  // 클라이언트 사이드 마운트 확인 (Hydration Error 방지)
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -33,43 +34,52 @@ const App: React.FC = () => {
   }, [selectedGenreId]);
 
   const handleCopy = async (text: string) => {
-    if (typeof navigator === 'undefined' || !navigator.clipboard) return;
+    if (typeof window === 'undefined' || !navigator.clipboard) return;
     try {
       await navigator.clipboard.writeText(text);
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 2000);
     } catch (err) {
-      console.error('Failed to copy text: ', err);
+      console.error('Copy failed:', err);
     }
   };
 
   const generateAIPrompt = async () => {
     const apiKey = process.env.API_KEY;
-    if (!userConcept.trim() || !apiKey) {
-      if (!apiKey) console.warn("API Key is missing. Check your environment variables.");
+    if (!userConcept.trim()) return;
+    
+    if (!apiKey) {
+      setErrorStatus("API 설정이 필요합니다.");
+      setTimeout(() => setErrorStatus(null), 3000);
       return;
     }
     
     setAiLoading(true);
+    setErrorStatus(null);
+    
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Create a professional Suno v5 music prompt for the genre "${selectedGenre.name}" with the specific concept: "${userConcept}". 
-        Return ONLY a JSON object with keys "prompt" (the English tags) and "description" (a brief Korean explanation). 
-        Format: {"prompt": "...", "description": "..."}`,
-        config: { responseMimeType: "application/json" }
+        contents: `Create a professional Suno v5 music prompt for the genre "${selectedGenre.name}" with the concept: "${userConcept}". 
+        Return ONLY a JSON object: {"prompt": "...", "description": "..."}`,
+        config: { 
+          responseMimeType: "application/json",
+          temperature: 0.7
+        }
       });
       
       const text = response.text;
       if (text) {
         const result = JSON.parse(text);
         if (result.prompt) {
-          setCustomPrompt({ text: result.prompt, desc: result.description });
+          setCustomPrompt({ text: result.prompt, desc: result.description || "AI가 생성한 컨셉입니다." });
         }
       }
     } catch (error) {
-      console.error("AI Generation failed", error);
+      console.error("AI Generation failed:", error);
+      setErrorStatus("생성 중 오류가 발생했습니다.");
+      setTimeout(() => setErrorStatus(null), 3000);
     } finally {
       setAiLoading(false);
     }
@@ -78,25 +88,20 @@ const App: React.FC = () => {
   const accentColor = selectedGenre.category === 'K-POP' ? '#db2777' : '#3b82f6';
   const accentBg = selectedGenre.category === 'K-POP' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600';
 
-  // 하이드레이션 오류 방지를 위해 마운트 전에는 기본 뼈대만 렌더링하거나 null 반환 가능
   if (!mounted) return <div className="min-h-screen bg-gray-50" />;
 
   return (
-    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto transition-colors duration-500">
-      {/* Header */}
+    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto transition-all duration-500">
       <header className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between border-b pb-6 border-gray-200">
         <div>
           <h1 className="text-3xl md:text-5xl font-black text-gray-900 tracking-tighter">
             Suno v5 <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-pink-600">Prompt Lab</span>
           </h1>
-          <p className="text-gray-500 mt-2 font-medium">
-            전문적인 음악 생성을 위한 고해상도 장르 가이드
-          </p>
+          <p className="text-gray-500 mt-2 font-medium">전문적인 음악 생성을 위한 정교한 프롬프트 가이드</p>
         </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Sidebar */}
         <aside className="lg:col-span-4 flex flex-col max-h-[calc(100vh-140px)]">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-4">
             <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide">
@@ -105,9 +110,7 @@ const App: React.FC = () => {
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
                   className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                    categoryFilter === cat 
-                    ? 'bg-gray-900 text-white' 
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    categoryFilter === cat ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                   }`}
                 >
                   {cat}
@@ -142,9 +145,7 @@ const App: React.FC = () => {
               >
                 <span className="font-bold tracking-tight">{genre.name}</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
-                  selectedGenreId === genre.id 
-                    ? 'bg-gray-900 text-white' 
-                    : 'bg-gray-100 text-gray-400'
+                  selectedGenreId === genre.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'
                 }`}>
                   {genre.category}
                 </span>
@@ -153,7 +154,6 @@ const App: React.FC = () => {
           </div>
         </aside>
 
-        {/* Main Content */}
         <main className="lg:col-span-8 space-y-8">
           <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-200/50 border border-gray-100 p-6 md:p-10 relative overflow-hidden group">
             <div className={`absolute -top-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-10 transition-colors duration-700 ${
@@ -171,12 +171,10 @@ const App: React.FC = () => {
                 <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4 tracking-tighter leading-none">
                   {selectedGenre.name}
                 </h2>
-                <p className="text-gray-500 text-lg font-medium leading-relaxed mb-8 max-w-xl">
-                  {selectedGenre.desc}
-                </p>
+                <p className="text-gray-500 text-lg font-medium leading-relaxed mb-8 max-w-xl">{selectedGenre.desc}</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedGenre.tags.map(tag => (
-                    <span key={tag} className="px-3 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-400 font-bold border border-gray-100 hover:border-gray-300 transition-colors cursor-default">
+                    <span key={tag} className="px-3 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-400 font-bold border border-gray-100">
                       #{tag}
                     </span>
                   ))}
@@ -188,7 +186,7 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl">
+          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl relative">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-blue-500 rounded-lg">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -196,12 +194,13 @@ const App: React.FC = () => {
                 </svg>
               </div>
               <h3 className="text-xl font-bold">AI Smart Refiner</h3>
+              {errorStatus && <span className="text-xs text-pink-400 font-bold animate-pulse">{errorStatus}</span>}
             </div>
             
             <div className="flex flex-col md:flex-row gap-3">
               <input 
                 type="text"
-                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 사이버펑크)"
+                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 도시의 밤)"
                 value={userConcept}
                 onChange={(e) => setUserConcept(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && generateAIPrompt()}
@@ -210,11 +209,9 @@ const App: React.FC = () => {
               <button 
                 onClick={generateAIPrompt}
                 disabled={aiLoading || !userConcept}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px]"
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px] active:scale-95"
               >
-                {aiLoading ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                ) : '생성하기'}
+                {aiLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '생성하기'}
               </button>
             </div>
 
@@ -247,21 +244,15 @@ const App: React.FC = () => {
                 >
                   <div>
                     <div className="flex justify-between items-center mb-4">
-                      <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-[10px] font-black text-gray-400">
-                        {String(i + 1).padStart(2, '0')}
-                      </div>
+                      <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-[10px] font-black text-gray-400">{String(i + 1).padStart(2, '0')}</div>
                       <svg className="w-4 h-4 text-gray-200 group-hover:text-blue-500 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                         <path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"></path>
                         <path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H5a2 2 0 01-2-2V5z"></path>
                       </svg>
                     </div>
-                    <p className="text-gray-900 font-mono text-[13px] font-bold mb-4 leading-snug">
-                      {p.text}
-                    </p>
+                    <p className="text-gray-900 font-mono text-[13px] font-bold mb-4 leading-snug">{p.text}</p>
                     <div className="pt-4 border-t border-gray-50">
-                      <p className="text-xs text-gray-400 font-medium italic">
-                        {p.desc}
-                      </p>
+                      <p className="text-xs text-gray-400 font-medium italic">{p.desc}</p>
                     </div>
                   </div>
                 </div>
@@ -279,7 +270,7 @@ const App: React.FC = () => {
         <div className="bg-green-500 p-1 rounded-full">
           <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
         </div>
-        <span>복사 완료! Suno에 붙여넣으세요.</span>
+        <span>복사 완료!</span>
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
