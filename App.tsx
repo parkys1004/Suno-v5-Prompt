@@ -16,7 +16,7 @@ const App: React.FC = () => {
   const [userConcept, setUserConcept] = useState('');
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
-  // 클라이언트 사이드 마운트 확인 (Hydration Error 방지)
+  // SSR 하이드레이션 불일치 방지: 브라우저 마운트 후 렌더링 시작
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -34,22 +34,24 @@ const App: React.FC = () => {
   }, [selectedGenreId]);
 
   const handleCopy = async (text: string) => {
+    // window/navigator 존재 여부 체크 (SSR 환경 대비)
     if (typeof window === 'undefined' || !navigator.clipboard) return;
     try {
       await navigator.clipboard.writeText(text);
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 2000);
     } catch (err) {
-      console.error('Copy failed:', err);
+      // 에러 로그는 최소화하여 사용자 노출 방지
     }
   };
 
   const generateAIPrompt = async () => {
+    // Vercel 환경 변수 참조
     const apiKey = process.env.API_KEY;
     if (!userConcept.trim()) return;
     
     if (!apiKey) {
-      setErrorStatus("API 설정이 필요합니다.");
+      setErrorStatus("서비스 설정을 확인해주세요.");
       setTimeout(() => setErrorStatus(null), 3000);
       return;
     }
@@ -73,12 +75,14 @@ const App: React.FC = () => {
       if (text) {
         const result = JSON.parse(text);
         if (result.prompt) {
-          setCustomPrompt({ text: result.prompt, desc: result.description || "AI가 생성한 컨셉입니다." });
+          setCustomPrompt({ 
+            text: result.prompt, 
+            desc: result.description || "AI가 맞춤형으로 생성한 프롬프트입니다." 
+          });
         }
       }
     } catch (error) {
-      console.error("AI Generation failed:", error);
-      setErrorStatus("생성 중 오류가 발생했습니다.");
+      setErrorStatus("잠시 후 다시 시도해주세요.");
       setTimeout(() => setErrorStatus(null), 3000);
     } finally {
       setAiLoading(false);
@@ -88,7 +92,8 @@ const App: React.FC = () => {
   const accentColor = selectedGenre.category === 'K-POP' ? '#db2777' : '#3b82f6';
   const accentBg = selectedGenre.category === 'K-POP' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600';
 
-  if (!mounted) return <div className="min-h-screen bg-gray-50" />;
+  // SSR 안정성을 위한 초기 상태 처리
+  if (!mounted) return null;
 
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto transition-all duration-500">
@@ -110,7 +115,7 @@ const App: React.FC = () => {
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
                   className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                    categoryFilter === cat ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    categoryFilter === cat ? 'bg-gray-900 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                   }`}
                 >
                   {cat}
@@ -140,7 +145,7 @@ const App: React.FC = () => {
                 className={`w-full text-left p-4 rounded-2xl transition-all border flex justify-between items-center group transform-gpu active:scale-[0.98] ${
                   selectedGenreId === genre.id 
                     ? 'bg-white border-gray-900 ring-2 ring-gray-900 ring-inset text-gray-900 shadow-md' 
-                    : 'bg-white border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-200'
+                    : 'bg-white border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-200 shadow-sm'
                 }`}
               >
                 <span className="font-bold tracking-tight">{genre.name}</span>
@@ -186,8 +191,8 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl relative">
-            <div className="flex items-center gap-3 mb-6">
+          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl relative overflow-hidden">
+            <div className="flex items-center gap-3 mb-6 relative z-10">
               <div className="p-2 bg-blue-500 rounded-lg">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -197,10 +202,10 @@ const App: React.FC = () => {
               {errorStatus && <span className="text-xs text-pink-400 font-bold animate-pulse">{errorStatus}</span>}
             </div>
             
-            <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex flex-col md:flex-row gap-3 relative z-10">
               <input 
                 type="text"
-                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 도시의 밤)"
+                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 차분한 밤)"
                 value={userConcept}
                 onChange={(e) => setUserConcept(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && generateAIPrompt()}
@@ -209,7 +214,7 @@ const App: React.FC = () => {
               <button 
                 onClick={generateAIPrompt}
                 disabled={aiLoading || !userConcept}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px] active:scale-95"
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px] active:scale-95 shadow-lg"
               >
                 {aiLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '생성하기'}
               </button>
@@ -218,11 +223,11 @@ const App: React.FC = () => {
             {customPrompt && (
               <div 
                 onClick={() => handleCopy(customPrompt.text)}
-                className="mt-6 p-5 bg-white/5 border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all animate-in fade-in zoom-in duration-300 group"
+                className="mt-6 p-5 bg-white/5 border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all animate-in fade-in zoom-in duration-300 group relative z-10"
               >
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Custom Generated Prompt</span>
-                  <svg className="w-4 h-4 text-white/30 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path></svg>
+                  <svg className="w-4 h-4 text-white/30 group-hover:text-blue-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path></svg>
                 </div>
                 <p className="text-lg font-mono font-bold text-white mb-2 leading-tight">{customPrompt.text}</p>
                 <p className="text-sm text-white/60">"{customPrompt.desc}"</p>
@@ -270,7 +275,7 @@ const App: React.FC = () => {
         <div className="bg-green-500 p-1 rounded-full">
           <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
         </div>
-        <span>복사 완료!</span>
+        <span>프롬프트 복사 완료!</span>
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
