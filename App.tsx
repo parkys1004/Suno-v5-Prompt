@@ -17,6 +17,7 @@ const App: React.FC = () => {
   const [userConcept, setUserConcept] = useState('');
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
+  // SSR 환경에서 Hydration mismatch를 방지하기 위해 마운트 완료를 추적
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -34,22 +35,24 @@ const App: React.FC = () => {
   }, [selectedGenreId]);
 
   const handleCopy = async (text: string) => {
+    // SSR 안전성 및 브라우저 API 호환성 체크
     if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.clipboard) return;
     try {
       await navigator.clipboard.writeText(text);
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 2000);
     } catch (err) {
-      // Fail silently for user experience
+      // 상용 환경에서는 사용자 경험을 위해 무음 처리하거나 UI 상태로만 관리
     }
   };
 
   const generateAIPrompt = async () => {
+    // Vercel 환경 변수 참조
     const apiKey = process.env.API_KEY;
     if (!userConcept.trim()) return;
     
     if (!apiKey) {
-      setErrorStatus("API 설정을 확인해주세요.");
+      setErrorStatus("서비스 환경 설정을 확인해 주세요.");
       setTimeout(() => setErrorStatus(null), 3000);
       return;
     }
@@ -61,11 +64,12 @@ const App: React.FC = () => {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Create a professional Suno v5 music prompt for the genre "${selectedGenre.name}" with the concept: "${userConcept}". 
-        Return ONLY a JSON object: {"prompt": "...", "description": "..."}`,
+        contents: `Create a professional Suno v5 music prompt for the genre "${selectedGenre.name}" with the specific concept: "${userConcept}". 
+        Return ONLY a JSON object with keys "prompt" (the English tags) and "description" (a brief Korean explanation). 
+        Format: {"prompt": "...", "description": "..."}`,
         config: { 
           responseMimeType: "application/json",
-          temperature: 0.7
+          temperature: 0.75
         }
       });
       
@@ -75,12 +79,12 @@ const App: React.FC = () => {
         if (result.prompt) {
           setCustomPrompt({ 
             text: result.prompt, 
-            desc: result.description || "AI가 맞춤형으로 생성한 프롬프트입니다." 
+            desc: result.description || "AI가 맞춤형으로 분석한 감성 태그입니다." 
           });
         }
       }
     } catch (error) {
-      setErrorStatus("잠시 후 다시 시도해주세요.");
+      setErrorStatus("AI 생성 중 일시적인 오류가 발생했습니다.");
       setTimeout(() => setErrorStatus(null), 3000);
     } finally {
       setAiLoading(false);
@@ -90,6 +94,7 @@ const App: React.FC = () => {
   const accentColor = selectedGenre.category === 'K-POP' ? '#db2777' : '#3b82f6';
   const accentBg = selectedGenre.category === 'K-POP' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600';
 
+  // 마운트 전에는 렌더링을 지연시켜 클라이언트와 서버의 초기 돔 구조 불일치(Hydration error)를 완전히 차단
   if (!mounted) return null;
 
   return (
@@ -99,7 +104,9 @@ const App: React.FC = () => {
           <h1 className="text-3xl md:text-5xl font-black text-gray-900 tracking-tighter">
             Suno v5 <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-pink-600">Prompt Lab</span>
           </h1>
-          <p className="text-gray-500 mt-2 font-medium">전문적인 음악 생성을 위한 정교한 프롬프트 가이드</p>
+          <p className="text-gray-500 mt-2 font-medium">
+            전문적인 음악 생성을 위한 고해상도 장르 가이드
+          </p>
         </div>
       </header>
 
@@ -112,7 +119,9 @@ const App: React.FC = () => {
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
                   className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                    categoryFilter === cat ? 'bg-gray-900 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    categoryFilter === cat 
+                    ? 'bg-gray-900 text-white shadow-md' 
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                   }`}
                 >
                   {cat}
@@ -173,10 +182,12 @@ const App: React.FC = () => {
                 <h2 className="text-4xl md:text-5xl font-black text-gray-900 mb-4 tracking-tighter leading-none">
                   {selectedGenre.name}
                 </h2>
-                <p className="text-gray-500 text-lg font-medium leading-relaxed mb-8 max-w-xl">{selectedGenre.desc}</p>
+                <p className="text-gray-500 text-lg font-medium leading-relaxed mb-8 max-w-xl">
+                  {selectedGenre.desc}
+                </p>
                 <div className="flex flex-wrap gap-2">
                   {selectedGenre.tags.map(tag => (
-                    <span key={tag} className="px-3 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-400 font-bold border border-gray-100">
+                    <span key={tag} className="px-3 py-1.5 bg-gray-50 rounded-lg text-xs text-gray-400 font-bold border border-gray-100 hover:border-gray-300 transition-colors cursor-default">
                       #{tag}
                     </span>
                   ))}
@@ -188,7 +199,7 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl relative overflow-hidden">
+          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl relative">
             <div className="flex items-center gap-3 mb-6 relative z-10">
               <div className="p-2 bg-blue-500 rounded-lg">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -202,7 +213,7 @@ const App: React.FC = () => {
             <div className="flex flex-col md:flex-row gap-3 relative z-10">
               <input 
                 type="text"
-                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 차분한 밤)"
+                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 도시의 야경)"
                 value={userConcept}
                 onChange={(e) => setUserConcept(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && generateAIPrompt()}
@@ -213,7 +224,9 @@ const App: React.FC = () => {
                 disabled={aiLoading || !userConcept}
                 className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px] active:scale-95 shadow-lg"
               >
-                {aiLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : '생성하기'}
+                {aiLoading ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : '생성하기'}
               </button>
             </div>
 
@@ -246,15 +259,21 @@ const App: React.FC = () => {
                 >
                   <div>
                     <div className="flex justify-between items-center mb-4">
-                      <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-[10px] font-black text-gray-400">{String(i + 1).padStart(2, '0')}</div>
+                      <div className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-[10px] font-black text-gray-400">
+                        {String(i + 1).padStart(2, '0')}
+                      </div>
                       <svg className="w-4 h-4 text-gray-200 group-hover:text-blue-500 transition-colors" fill="currentColor" viewBox="0 0 20 20">
                         <path d="M8 2a1 1 0 000 2h2a1 1 0 100-2H8z"></path>
                         <path d="M3 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H5a2 2 0 01-2-2V5z"></path>
                       </svg>
                     </div>
-                    <p className="text-gray-900 font-mono text-[13px] font-bold mb-4 leading-snug">{p.text}</p>
+                    <p className="text-gray-900 font-mono text-[13px] font-bold mb-4 leading-snug">
+                      {p.text}
+                    </p>
                     <div className="pt-4 border-t border-gray-50">
-                      <p className="text-xs text-gray-400 font-medium italic">{p.desc}</p>
+                      <p className="text-xs text-gray-400 font-medium italic">
+                        {p.desc}
+                      </p>
                     </div>
                   </div>
                 </div>
