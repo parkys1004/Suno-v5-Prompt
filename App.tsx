@@ -6,6 +6,7 @@ import RadarChart from './components/RadarChart';
 import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
+  const [mounted, setMounted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'All' | 'Standard' | 'K-POP'>('All');
   const [selectedGenreId, setSelectedGenreId] = useState<number>(1);
@@ -13,6 +14,11 @@ const App: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState<{text: string, desc: string} | null>(null);
   const [userConcept, setUserConcept] = useState('');
+
+  // SSR 환경에서 클라이언트 전용 기능을 안전하게 실행하기 위한 mounted check
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const filteredGenres = useMemo(() => {
     return GENRE_DATA.filter(g => {
@@ -27,6 +33,7 @@ const App: React.FC = () => {
   }, [selectedGenreId]);
 
   const handleCopy = async (text: string) => {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return;
     try {
       await navigator.clipboard.writeText(text);
       setToastVisible(true);
@@ -37,10 +44,15 @@ const App: React.FC = () => {
   };
 
   const generateAIPrompt = async () => {
-    if (!userConcept.trim()) return;
+    const apiKey = process.env.API_KEY;
+    if (!userConcept.trim() || !apiKey) {
+      if (!apiKey) console.warn("API Key is missing. Check your environment variables.");
+      return;
+    }
+    
     setAiLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Create a professional Suno v5 music prompt for the genre "${selectedGenre.name}" with the specific concept: "${userConcept}". 
@@ -49,9 +61,12 @@ const App: React.FC = () => {
         config: { responseMimeType: "application/json" }
       });
       
-      const result = JSON.parse(response.text || '{}');
-      if (result.prompt) {
-        setCustomPrompt({ text: result.prompt, desc: result.description });
+      const text = response.text;
+      if (text) {
+        const result = JSON.parse(text);
+        if (result.prompt) {
+          setCustomPrompt({ text: result.prompt, desc: result.description });
+        }
       }
     } catch (error) {
       console.error("AI Generation failed", error);
@@ -62,6 +77,9 @@ const App: React.FC = () => {
 
   const accentColor = selectedGenre.category === 'K-POP' ? '#db2777' : '#3b82f6';
   const accentBg = selectedGenre.category === 'K-POP' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600';
+
+  // 하이드레이션 오류 방지를 위해 마운트 전에는 기본 뼈대만 렌더링하거나 null 반환 가능
+  if (!mounted) return <div className="min-h-screen bg-gray-50" />;
 
   return (
     <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto transition-colors duration-500">
@@ -82,10 +100,10 @@ const App: React.FC = () => {
         <aside className="lg:col-span-4 flex flex-col max-h-[calc(100vh-140px)]">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-4">
             <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide">
-              {['All', 'Standard', 'K-POP'].map((cat) => (
+              {(['All', 'Standard', 'K-POP'] as const).map((cat) => (
                 <button
                   key={cat}
-                  onClick={() => setCategoryFilter(cat as any)}
+                  onClick={() => setCategoryFilter(cat)}
                   className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                     categoryFilter === cat 
                     ? 'bg-gray-900 text-white' 
@@ -137,9 +155,7 @@ const App: React.FC = () => {
 
         {/* Main Content */}
         <main className="lg:col-span-8 space-y-8">
-          {/* Genre Detail Card */}
           <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-200/50 border border-gray-100 p-6 md:p-10 relative overflow-hidden group">
-             {/* Decorative Background */}
             <div className={`absolute -top-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-10 transition-colors duration-700 ${
               selectedGenre.category === 'K-POP' ? 'bg-pink-500' : 'bg-blue-500'
             }`}></div>
@@ -172,7 +188,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* AI Refiner Tool */}
           <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-blue-500 rounded-lg">
@@ -186,7 +201,7 @@ const App: React.FC = () => {
             <div className="flex flex-col md:flex-row gap-3">
               <input 
                 type="text"
-                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 사이버펑크, 여름축제)"
+                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 사이버펑크)"
                 value={userConcept}
                 onChange={(e) => setUserConcept(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && generateAIPrompt()}
@@ -195,7 +210,7 @@ const App: React.FC = () => {
               <button 
                 onClick={generateAIPrompt}
                 disabled={aiLoading || !userConcept}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px]"
               >
                 {aiLoading ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -218,7 +233,6 @@ const App: React.FC = () => {
             )}
           </div>
 
-          {/* Prompt Section */}
           <div className="space-y-4">
             <h3 className="text-xl font-bold text-gray-900 flex items-center px-2">
               <span className="w-1.5 h-6 bg-blue-600 rounded-full mr-3"></span>
@@ -257,7 +271,6 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Toast Notification */}
       <div 
         className={`fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-900/95 backdrop-blur-md text-white px-8 py-4 rounded-2xl font-bold shadow-2xl transition-all duration-500 z-50 flex items-center gap-3 transform-gpu ${
           toastVisible ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-10 scale-95 pointer-events-none'
@@ -273,7 +286,6 @@ const App: React.FC = () => {
         .custom-scroll::-webkit-scrollbar { width: 4px; }
         .custom-scroll::-webkit-scrollbar-track { background: transparent; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 10px; }
-        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
       `}} />
     </div>
