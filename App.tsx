@@ -1,4 +1,3 @@
-"use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { GENRE_DATA } from './constants';
@@ -15,9 +14,8 @@ const App: React.FC = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [customPrompt, setCustomPrompt] = useState<{text: string, desc: string} | null>(null);
   const [userConcept, setUserConcept] = useState('');
-  const [errorStatus, setErrorStatus] = useState<string | null>(null);
 
-  // SSR 환경에서 Hydration mismatch를 방지하기 위해 마운트 완료를 추적
+  // SSR 환경에서 클라이언트 전용 기능을 안전하게 실행하기 위한 mounted check
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -35,31 +33,24 @@ const App: React.FC = () => {
   }, [selectedGenreId]);
 
   const handleCopy = async (text: string) => {
-    // SSR 안전성 및 브라우저 API 호환성 체크
-    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return;
     try {
       await navigator.clipboard.writeText(text);
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 2000);
     } catch (err) {
-      // 상용 환경에서는 사용자 경험을 위해 무음 처리하거나 UI 상태로만 관리
+      console.error('Failed to copy text: ', err);
     }
   };
 
   const generateAIPrompt = async () => {
-    // Vercel 환경 변수 참조
     const apiKey = process.env.API_KEY;
-    if (!userConcept.trim()) return;
-    
-    if (!apiKey) {
-      setErrorStatus("서비스 환경 설정을 확인해 주세요.");
-      setTimeout(() => setErrorStatus(null), 3000);
+    if (!userConcept.trim() || !apiKey) {
+      if (!apiKey) console.warn("API Key is missing. Check your environment variables.");
       return;
     }
     
     setAiLoading(true);
-    setErrorStatus(null);
-    
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
@@ -67,25 +58,18 @@ const App: React.FC = () => {
         contents: `Create a professional Suno v5 music prompt for the genre "${selectedGenre.name}" with the specific concept: "${userConcept}". 
         Return ONLY a JSON object with keys "prompt" (the English tags) and "description" (a brief Korean explanation). 
         Format: {"prompt": "...", "description": "..."}`,
-        config: { 
-          responseMimeType: "application/json",
-          temperature: 0.75
-        }
+        config: { responseMimeType: "application/json" }
       });
       
       const text = response.text;
       if (text) {
         const result = JSON.parse(text);
         if (result.prompt) {
-          setCustomPrompt({ 
-            text: result.prompt, 
-            desc: result.description || "AI가 맞춤형으로 분석한 감성 태그입니다." 
-          });
+          setCustomPrompt({ text: result.prompt, desc: result.description });
         }
       }
     } catch (error) {
-      setErrorStatus("AI 생성 중 일시적인 오류가 발생했습니다.");
-      setTimeout(() => setErrorStatus(null), 3000);
+      console.error("AI Generation failed", error);
     } finally {
       setAiLoading(false);
     }
@@ -94,11 +78,12 @@ const App: React.FC = () => {
   const accentColor = selectedGenre.category === 'K-POP' ? '#db2777' : '#3b82f6';
   const accentBg = selectedGenre.category === 'K-POP' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600';
 
-  // 마운트 전에는 렌더링을 지연시켜 클라이언트와 서버의 초기 돔 구조 불일치(Hydration error)를 완전히 차단
-  if (!mounted) return null;
+  // 하이드레이션 오류 방지를 위해 마운트 전에는 기본 뼈대만 렌더링하거나 null 반환 가능
+  if (!mounted) return <div className="min-h-screen bg-gray-50" />;
 
   return (
-    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto transition-all duration-500">
+    <div className="min-h-screen p-4 md:p-8 max-w-7xl mx-auto transition-colors duration-500">
+      {/* Header */}
       <header className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between border-b pb-6 border-gray-200">
         <div>
           <h1 className="text-3xl md:text-5xl font-black text-gray-900 tracking-tighter">
@@ -111,6 +96,7 @@ const App: React.FC = () => {
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Sidebar */}
         <aside className="lg:col-span-4 flex flex-col max-h-[calc(100vh-140px)]">
           <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-4">
             <div className="flex gap-2 mb-4 overflow-x-auto pb-1 scrollbar-hide">
@@ -120,7 +106,7 @@ const App: React.FC = () => {
                   onClick={() => setCategoryFilter(cat)}
                   className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                     categoryFilter === cat 
-                    ? 'bg-gray-900 text-white shadow-md' 
+                    ? 'bg-gray-900 text-white' 
                     : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                   }`}
                 >
@@ -151,12 +137,14 @@ const App: React.FC = () => {
                 className={`w-full text-left p-4 rounded-2xl transition-all border flex justify-between items-center group transform-gpu active:scale-[0.98] ${
                   selectedGenreId === genre.id 
                     ? 'bg-white border-gray-900 ring-2 ring-gray-900 ring-inset text-gray-900 shadow-md' 
-                    : 'bg-white border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-200 shadow-sm'
+                    : 'bg-white border-transparent text-gray-600 hover:bg-gray-50 hover:border-gray-200'
                 }`}
               >
                 <span className="font-bold tracking-tight">{genre.name}</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
-                  selectedGenreId === genre.id ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'
+                  selectedGenreId === genre.id 
+                    ? 'bg-gray-900 text-white' 
+                    : 'bg-gray-100 text-gray-400'
                 }`}>
                   {genre.category}
                 </span>
@@ -165,6 +153,7 @@ const App: React.FC = () => {
           </div>
         </aside>
 
+        {/* Main Content */}
         <main className="lg:col-span-8 space-y-8">
           <div className="bg-white rounded-[2rem] shadow-xl shadow-gray-200/50 border border-gray-100 p-6 md:p-10 relative overflow-hidden group">
             <div className={`absolute -top-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-10 transition-colors duration-700 ${
@@ -199,21 +188,20 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl relative">
-            <div className="flex items-center gap-3 mb-6 relative z-10">
+          <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-3xl p-6 md:p-8 text-white shadow-2xl">
+            <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-blue-500 rounded-lg">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                 </svg>
               </div>
               <h3 className="text-xl font-bold">AI Smart Refiner</h3>
-              {errorStatus && <span className="text-xs text-pink-400 font-bold animate-pulse">{errorStatus}</span>}
             </div>
             
-            <div className="flex flex-col md:flex-row gap-3 relative z-10">
+            <div className="flex flex-col md:flex-row gap-3">
               <input 
                 type="text"
-                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 도시의 야경)"
+                placeholder="어떤 느낌을 추가할까요? (예: 새벽 감성, 사이버펑크)"
                 value={userConcept}
                 onChange={(e) => setUserConcept(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && generateAIPrompt()}
@@ -222,7 +210,7 @@ const App: React.FC = () => {
               <button 
                 onClick={generateAIPrompt}
                 disabled={aiLoading || !userConcept}
-                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px] active:scale-95 shadow-lg"
+                className="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center gap-2 min-w-[120px]"
               >
                 {aiLoading ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -233,11 +221,11 @@ const App: React.FC = () => {
             {customPrompt && (
               <div 
                 onClick={() => handleCopy(customPrompt.text)}
-                className="mt-6 p-5 bg-white/5 border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all animate-in fade-in zoom-in duration-300 group relative z-10"
+                className="mt-6 p-5 bg-white/5 border border-white/10 rounded-2xl cursor-pointer hover:bg-white/10 transition-all animate-in fade-in zoom-in duration-300 group"
               >
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Custom Generated Prompt</span>
-                  <svg className="w-4 h-4 text-white/30 group-hover:text-blue-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path></svg>
+                  <svg className="w-4 h-4 text-white/30 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path></svg>
                 </div>
                 <p className="text-lg font-mono font-bold text-white mb-2 leading-tight">{customPrompt.text}</p>
                 <p className="text-sm text-white/60">"{customPrompt.desc}"</p>
@@ -291,7 +279,7 @@ const App: React.FC = () => {
         <div className="bg-green-500 p-1 rounded-full">
           <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
         </div>
-        <span>프롬프트 복사 완료!</span>
+        <span>복사 완료! Suno에 붙여넣으세요.</span>
       </div>
 
       <style dangerouslySetInnerHTML={{ __html: `
